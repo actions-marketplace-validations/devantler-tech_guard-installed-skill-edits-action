@@ -1,23 +1,25 @@
 # Guard Installed Skill Edits
 
-Refuse a hand-edit to a synced installed-skill tree and name the skill's
-upstream so the change is made there instead of being silently reverted.
+Flag pull-request edits to agent skills installed from another repository.
 
-The check keys on `metadata.github-repo` in each skill's `SKILL.md` at the pull
-request **base**, not on the current path. Provenance must be a **direct child**
-of the `metadata` mapping: a top-level `github-repo`, or one nested deeper such
-as `metadata.source.github-repo`, is not provenance and does not mark a skill as
-synced — otherwise a stray key could make a local skill permanently uneditable.
-Adding a wholly new skill directory is allowed, and so is retiring one wholesale:
-removing an installed skill is a local decision, and only editing a synced one is
-not. The programmed `update-agent-skills` PR is exempt only when both the actor
-and the head branch match. Missing CI context, an unreadable `SKILL.md`, or
-provenance that cannot be READ is UNKNOWN rather than a silent pass. A record that reads cleanly and simply names no upstream means the skill is local, and a local skill stays editable.
+Use this action when your repository checks in skills installed with `gh skill`.
+Editing an installed copy can lose your changes the next time the skill is updated.
+The action fails the pull-request check and names the skill's source repository,
+so contributors know where to make the fix.
 
-Changed paths come from the **merge base** (a three-dot diff), not from the two
-commits directly. A base branch that advances after a PR branches — most often
-the daily updater editing a synced skill — would otherwise be attributed to the
-PR, and the guard would refuse a pull request that never touched that skill.
+For example, if `.agents/skills/ways-of-working/SKILL.md` was installed from
+`devantler-tech/agent-skills`, a pull request editing that copy fails the check. Make the
+change in `devantler-tech/agent-skills`, then update the installed skill.
+
+| Pull-request change | Result |
+| --- | --- |
+| Edit a skill installed from another repository | Check fails and names its source repository |
+| Add a new skill | Check passes |
+| Edit a skill maintained locally | Check passes |
+| Remove an entire skill | Check passes |
+| Update skills through the configured updater | Check passes when its account and branch match the configured inputs |
+
+See [Usage](#usage) for the workflow example.
 
 ## Requirements
 
@@ -64,6 +66,48 @@ This action has no outputs.
 
 ## Usage
 
+Create `.github/workflows/guard-skills.yaml` with the following workflow. It checks
+pull requests and merge-queue groups on a GitHub-hosted Ubuntu runner, which includes
+the required `yq`.
+
+```yaml
+name: Guard installed skill edits
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+permissions: {}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard installed skill edits
+        uses: devantler-tech/guard-installed-skill-edits-action@0b57d72a07a7d2d1b4100b4a84985d03401e18ae # v1.0.2
+```
+
+The example pins verified releases and needs no additional secrets. Check the
+[action releases](https://github.com/devantler-tech/guard-installed-skill-edits-action/releases)
+when choosing a newer version.
+
+To prevent merging edits that fail this check, make `guard` a required status check
+in your repository's branch protection or ruleset. The workflow reports failures;
+the repository rule enforces the merge requirement.
+
+The configured updater exemption uses the pull request's account and branch.
+`merge_group` events do not carry that pull-request identity, so merge queues need
+their own workflow-level handling for updater changes. See [Requirements](#requirements).
+
+## How it detects changes
+
 The checkout is part of the usage, not a precondition you can assume. With no checkout every
 path is absent, so a root-existence test alone would find nothing and exit 0 — a required
 guard reporting success having evaluated nothing. The action therefore checks that it is
@@ -85,16 +129,6 @@ absent root — a required guard passing without evaluating anything. Each commi
 proven readable first, and an absent one is UNKNOWN. `fetch-depth: 0` is what makes both commits
 available, to this check and to the diff.
 
-```yaml
-- name: ⬇️ Checkout
-  uses: actions/checkout@<full-commit-sha> # vX.Y.Z
-  with:
-    fetch-depth: 0
-
-- name: Guard installed skill edits
-  uses: devantler-tech/guard-installed-skill-edits-action@<full-commit-sha> # vX.Y.Z
-```
-
 Pass a different `skill-root` when the consumer installs skills somewhere other than
 `.agents/skills`. A leading `./`, a trailing `/`, or `.` for skills at the repository root are all accepted and normalised.
 
@@ -115,6 +149,24 @@ a `github-repo` whose value is a mapping or a sequence rather than a scalar, an 
 a diff that cannot be computed, or `yq` missing from `PATH`. The action never treats any of those
 as "no provenance", because "no provenance" is what marks a skill local and editable — it is the
 verdict that permits the edit.
+
+The check keys on `metadata.github-repo` in each skill's `SKILL.md` at the pull
+request **base**, not on the current path. Provenance must be a **direct child**
+of the `metadata` mapping: a top-level `github-repo`, or one nested deeper such
+as `metadata.source.github-repo`, is not provenance and does not mark a skill as
+synced — otherwise a stray key could make a local skill permanently uneditable.
+Adding a wholly new skill directory is allowed, and so is retiring one wholesale:
+removing an installed skill is a local decision, and only editing a synced one is
+not. The programmed `update-agent-skills` PR is exempt only when both the actor
+and the head branch match. Missing CI context, an unreadable `SKILL.md`, or
+provenance that cannot be read is UNKNOWN rather than a silent pass. A record that
+reads cleanly and simply names no source repository means the skill is local, and
+a local skill stays editable.
+
+Changed paths come from the **merge base** (a three-dot diff), not from the two
+commits directly. A base branch that advances after a PR branches — most often
+the daily updater editing a synced skill — would otherwise be attributed to the
+PR, and the guard would refuse a pull request that never touched that skill.
 
 ## Release recovery
 

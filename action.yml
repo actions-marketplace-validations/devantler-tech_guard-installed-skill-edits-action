@@ -1,6 +1,6 @@
 name: Guard Installed Skill Edits
 author: devantler-tech
-description: Refuse a hand-edit to a synced installed-skill tree, naming its upstream
+description: Fail checks for edits to imported agent skills and identify the source repository for fixes.
 inputs:
   skill-root:
     description: Repository-relative installed-skill root
